@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- This page cannot reach the internet: everything happens on your computer. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'">
+<title>Encrypt portfolio</title>
+<style>
+:root{--paper:#F7F4EF;--card:#FFFDFA;--ink:#1B1915;--muted:#5F5850;--line:#E6DFD4;--soft:#F4E6DC;--rust:#B0431F;--ok:#2F6B4F}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:640px;margin:0 auto;padding:56px 20px 80px}
+.k{font:12px ui-monospace,Menlo,monospace;letter-spacing:.04em;text-transform:uppercase;color:var(--rust);margin:0 0 10px}
+h1{font-size:36px;line-height:1.1;letter-spacing:-.02em;margin:0 0 12px}
+.lede{color:var(--muted);margin:0 0 32px}
+.step{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;margin-bottom:16px}
+.step h2{font-size:18px;margin:0 0 6px;display:flex;gap:10px;align-items:center}
+.n{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--ink);color:var(--paper);font-size:13px;flex:none}
+.step.done .n{background:var(--ok)}
+.step p{margin:0 0 14px;color:var(--muted);font-size:15px}
+.step.off{opacity:.5;pointer-events:none}
+label{display:block;font-weight:600;font-size:14px;margin:14px 0 6px}
+input[type=password],input[type=text]{width:100%;font:inherit;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
+input:focus-visible,button:focus-visible{outline:2px solid var(--rust);outline-offset:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button{font:inherit;font-weight:600;min-height:44px;padding:0 18px;border-radius:999px;border:1.5px solid var(--ink);background:var(--ink);color:var(--paper);cursor:pointer}
+button.ghost{background:none;color:var(--ink)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.file{position:relative;display:inline-flex}
+.file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.meter{height:6px;border-radius:999px;background:var(--line);margin-top:10px;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:var(--rust);transition:width .3s,background .3s}
+.hint{font-size:14px;color:var(--muted);margin-top:8px;min-height:22px}
+.hint.good{color:var(--ok)}
+.status{font-size:14px;margin-top:12px;color:var(--muted)}
+.status.err{color:#9B2C1A}
+.status.ok{color:var(--ok)}
+.show{font-size:14px;font-weight:500;display:flex;gap:6px;align-items:center;margin-top:8px;color:var(--muted)}
+ul{margin:8px 0 0;padding-left:20px;color:var(--muted);font-size:15px}
+code{font:13px ui-monospace,Menlo,monospace;background:var(--soft);padding:1px 6px;border-radius:6px}
+</style>
+</head>
+<body>
+<main>
+  <p class="k">Erika Brentar portfolio</p>
+  <h1>Encrypt the case studies</h1>
+  <p class="lede">This page runs only on your computer and can’t connect to the internet. Your password never leaves this window.</p>
+
+  <section class="step" id="s1">
+    <h2><span class="n">1</span>Choose your <code>site-source</code> folder</h2>
+    <p>It’s inside your portfolio repo. Your browser may ask to confirm reading the folder; nothing is uploaded.</p>
+    <span class="file"><button type="button" tabindex="-1">Choose folder…</button><input id="dir" type="file" webkitdirectory directory multiple aria-label="Choose your site-source folder"></span>
+    <div class="status" id="s1st" role="status"></div>
+  </section>
+
+  <section class="step off" id="s2">
+    <h2><span class="n">2</span>Enter the password</h2>
+    <p>Use 4 or more random words or at least 16 characters. Visitors type this to open the case studies.</p>
+    <label for="pw1">Password</label>
+    <input id="pw1" type="password" autocomplete="new-password" spellcheck="false">
+    <div class="meter" aria-hidden="true"><i id="bar"></i></div>
+    <div class="hint" id="hint" aria-live="polite"></div>
+    <label for="pw2">Type it again</label>
+    <input id="pw2" type="password" autocomplete="new-password" spellcheck="false">
+    <label class="show"><input type="checkbox" id="showpw"> Show password</label>
+    <div class="status" id="s2st" role="status"></div>
+  </section>
+
+  <section class="step off" id="s3">
+    <h2><span class="n">3</span>Encrypt and save</h2>
+    <p>Save straight into your repo’s <code>docs</code> folder (Chrome or Edge), or download a .zip and unzip it into <code>docs</code>.</p>
+    <div class="row">
+      <button type="button" id="saveDir">Save into docs folder…</button>
+      <button type="button" class="ghost" id="saveZip">Download .zip</button>
+    </div>
+    <div class="status" id="s3st" role="status"></div>
+    <ul>
+      <li>Then commit and push <code>docs</code>. The readable <code>site-source</code> folder stays on your computer.</li>
+      <li>To change the password later, run this again with the new one and push.</li>
+    </ul>
+  </section>
+</main>
+
+<script id="core">
+/* ===== encryption core (same format the site's script reads) ===== */
+var EBCrypt = (function () {
+  var ITER = 600000;
+  function rand(n) { var u = new Uint8Array(n); crypto.getRandomValues(u); return u; }
+  function b64(u) { var s = ''; for (var i = 0; i < u.length; i++) s += String.fromCharCode(u[i]); return btoa(s); }
+  function cat(a, b) { var u = new Uint8Array(a.length + b.length); u.set(a, 0); u.set(b, a.length); return u; }
+  async function key(pw, salt, usage) {
+    var base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw.normalize('NFC')), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: salt, iterations: ITER, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, usage);
+  }
+  async function seal(k, bytes) {
+    var iv = rand(12);
+    var ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, bytes));
+    return cat(iv, ct);
+  }
+  // files: { 'public/index.html': Uint8Array, 'private/ai.json': ..., 'private/img/<id>': ... }
+  async function encryptSite(files, pw, onProgress) {
+    var studies = JSON.parse(new TextDecoder().decode(files['private/studies.json'])).studies;
+    var salt = rand(16);
+    var k = await key(pw, salt, ['encrypt', 'decrypt']);
+    var out = {}, jobs = [];
+    Object.keys(files).forEach(function (p) {
+      if (p.indexOf('public/') === 0) out[p.slice(7)] = files[p];
+      else if (/^private\/img\/[0-9a-f]+$/.test(p)) jobs.push(['cs/img/' + p.split('/').pop() + '.bin', files[p]]);
+    });
+    studies.forEach(function (s) {
+      if (!files['private/' + s + '.json']) throw new Error('Missing private/' + s + '.json');
+      jobs.push(['cs/' + s + '.bin', files['private/' + s + '.json']]);
+    });
+    for (var i = 0; i < jobs.length; i++) { out[jobs[i][0]] = await seal(k, jobs[i][1]); if (onProgress) onProgress(i + 1, jobs.length); }
+    out['site.json'] = new TextEncoder().encode(JSON.stringify({ v: 1, salt: b64(salt), iterations: ITER, studies: studies }));
+    out['.nojekyll'] = new Uint8Array(0);
+    // check: everything decrypts again with this password
+    var first = out['cs/' + studies[0] + '.bin'];
+    await crypto.subtle.decrypt({ name: 'AES-GCM', iv: first.slice(0, 12) }, k, first.slice(12));
+    return out;
+  }
+  return { encryptSite: encryptSite, ITER: ITER };
+})();
+</script>
+
+<script>
+/* ===== page ===== */
+var FILES = null;
+var $ = function (id) { return document.getElementById(id); };
+function st(id, msg, cls) { var e = $(id); e.textContent = msg; e.className = 'status' + (cls ? ' ' + cls : ''); }
+
+$('dir').addEventListener('change', async function (e) {
+  var list = [].slice.call(e.target.files || []);
+  var files = {};
+  for (var i = 0; i < list.length; i++) {
+    var f = list[i], rel = (f.webkitRelativePath || f.name).split('/').slice(1).join('/');
+    if (!rel || /(^|\/)\./.test(rel) || /Thumbs\.db$/i.test(rel)) continue;
+    files[rel] = new Uint8Array(await f.arrayBuffer());
+  }
+  if (!files['public/index.html'] || !files['private/studies.json']) {
+    FILES = null; st('s1st', 'That doesn’t look like the site-source folder. Choose the folder that has “public” and “private” inside it.', 'err');
+    $('s2').classList.add('off'); $('s3').classList.add('off'); return;
+  }
+  FILES = files;
+  var n = Object.keys(files).filter(function (p) { return p.indexOf('private/') === 0; }).length;
+  st('s1st', 'Found the site: ' + n + ' private files to encrypt.', 'ok');
+  $('s1').classList.add('done'); $('s2').classList.remove('off'); $('pw1').focus();
+});
+
+var COMMON = ['password', 'growth', 'portfolio', 'erika', 'brentar', 'design', 'designer', 'codecademy', 'articulate', 'qwerty', '123456', 'letmein', 'welcome'];
+function strength(p) {
+  if (!p) return { s: 0, msg: '' };
+  var low = p.toLowerCase(), words = p.split(/[\s\-_.]+/).filter(function (w) { return w.length >= 3; }).length;
+  var classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^a-zA-Z0-9]/].filter(function (r) { return r.test(p); }).length;
+  if (COMMON.some(function (w) { return low.indexOf(w) >= 0 && low.replace(w, '').length < 8; })) return { s: 1, msg: 'Too easy to guess. Avoid your name, the companies, or common words on their own.' };
+  if (p.length < 12) return { s: 1, msg: 'Too short. Aim for 4+ random words or 16+ characters.' };
+  if (p.length >= 20 || (words >= 4 && p.length >= 16)) return { s: 4, msg: 'Strong. This would take an attacker an impractically long time to guess.' };
+  if (p.length >= 16 || (classes >= 3 && p.length >= 14)) return { s: 3, msg: 'Good. A fifth word or a few more characters makes it even stronger.' };
+  return { s: 2, msg: 'Okay, but longer is much safer. Add another word.' };
+}
+function check() {
+  var a = $('pw1').value, b = $('pw2').value, r = strength(a);
+  $('bar').style.width = (r.s * 25) + '%';
+  $('bar').style.background = r.s >= 3 ? 'var(--ok)' : 'var(--rust)';
+  $('hint').textContent = r.msg; $('hint').className = 'hint' + (r.s >= 3 ? ' good' : '');
+  var ok = r.s >= 2 && a === b;
+  if (b && a !== b) st('s2st', 'The two passwords don’t match yet.', 'err'); else st('s2st', ok ? 'Ready to encrypt.' : '', ok ? 'ok' : '');
+  $('s3').classList.toggle('off', !ok || !FILES);
+  $('s2').classList.toggle('done', ok);
+}
+['pw1', 'pw2'].forEach(function (id) { $(id).addEventListener('input', check); });
+$('showpw').addEventListener('change', function () { var t = this.checked ? 'text' : 'password'; $('pw1').type = t; $('pw2').type = t; });
+
+async function build() {
+  $('saveDir').disabled = $('saveZip').disabled = true;
+  st('s3st', 'Encrypting… this takes a few seconds.');
+  try {
+    var out = await EBCrypt.encryptSite(FILES, $('pw1').value, function (i, n) { st('s3st', 'Encrypting… ' + i + ' of ' + n); });
+    return out;
+  } finally { $('saveDir').disabled = $('saveZip').disabled = false; }
+}
+
+$('saveDir').addEventListener('click', async function () {
+  if (!window.showDirectoryPicker) { st('s3st', 'Your browser can’t save into a folder directly. Use “Download .zip” instead.', 'err'); return; }
+  var dir;
+  try { dir = await showDirectoryPicker({ id: 'eb-docs', mode: 'readwrite' }); } catch (e) { return; }
+  if (dir.name !== 'docs' && !confirm('The folder you chose is “' + dir.name + '”, not “docs”. Save there anyway?')) return;
+  try {
+    var out = await build();
+    st('s3st', 'Saving…');
+    try { await dir.removeEntry('cs', { recursive: true }); } catch (e) {}
+    for (var p in out) {
+      var parts = p.split('/'), d = dir;
+      for (var i = 0; i < parts.length - 1; i++) d = await d.getDirectoryHandle(parts[i], { create: true });
+      var fh = await d.getFileHandle(parts[parts.length - 1], { create: true });
+      var w = await fh.createWritable(); await w.write(out[p]); await w.close();
+    }
+    st('s3st', 'Done. Saved ' + Object.keys(out).length + ' files into “' + dir.name + '”. Commit and push to publish.', 'ok');
+    $('s3').classList.add('done');
+  } catch (e) { st('s3st', 'Something went wrong: ' + e.message, 'err'); }
+});
+
+/* minimal .zip writer (stored, no compression) */
+function zip(files) {
+  var crcT = new Uint32Array(256);
+  for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; crcT[n] = c >>> 0; }
+  function crc(u) { var c = 0xFFFFFFFF; for (var i = 0; i < u.length; i++) c = crcT[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+  var enc = new TextEncoder(), parts = [], central = [], off = 0;
+  var d = new Date(), time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  Object.keys(files).forEach(function (name) {
+    var data = files[name], nm = enc.encode('docs/' + name), c = crc(data);
+    var h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, time, true); h.setUint16(12, date, true); h.setUint32(14, c, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true);
+    h.setUint16(26, nm.length, true); h.setUint16(28, 0, true);
+    parts.push(new Uint8Array(h.buffer), nm, data);
+    var ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, time, true); ch.setUint16(14, date, true); ch.setUint32(16, c, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true);
+    ch.setUint16(28, nm.length, true); ch.setUint32(42, off, true);
+    central.push(new Uint8Array(ch.buffer), nm);
+    off += 30 + nm.length + data.length;
+  });
+  var csize = central.reduce(function (a, u) { return a + u.length; }, 0);
+  var end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, Object.keys(files).length, true); end.setUint16(10, Object.keys(files).length, true);
+  end.setUint32(12, csize, true); end.setUint32(16, off, true);
+  return new Blob(parts.concat(central, [new Uint8Array(end.buffer)]), { type: 'application/zip' });
+}
+
+$('saveZip').addEventListener('click', async function () {
+  try {
+    var out = await build();
+    var a = document.createElement('a'); a.href = URL.createObjectURL(zip(out)); a.download = 'docs.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    st('s3st', 'Downloaded docs.zip. Unzip it into your repo so it replaces the docs folder, then commit and push.', 'ok');
+    $('s3').classList.add('done');
+  } catch (e) { st('s3st', 'Something went wrong: ' + e.message, 'err'); }
+});
+</script>
+</body>
+</html>

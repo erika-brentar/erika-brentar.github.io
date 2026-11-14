@@ -1,0 +1,4 @@
+# The readable case studies. Never commit or upload this folder.
+site-source/
+.DS_Store
+Thumbs.db
