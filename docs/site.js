@@ -20,7 +20,7 @@
   /* ---------- crypto ---------- */
   function config() {
     if (CFG) return Promise.resolve(CFG);
-    return fetch('site.json', { cache: 'no-cache' }).then(function (r) { return r.json(); }).then(function (c) { CFG = c; ORDER = c.studies; return c; });
+    return fetch('site.json', { cache: 'no-cache' }).catch(function () { throw new Error('load'); }).then(function (r) { if (!r.ok) throw new Error('load'); return r.json(); }).then(function (c) { CFG = c; ORDER = c.studies; return c; });
   }
   function deriveKey(pw) {
     return config().then(function (c) {
@@ -36,8 +36,8 @@
   }
   function loadStudy(id) {
     if (cache[id]) return Promise.resolve(cache[id]);
-    return fetch('cs/' + id + '.bin', { cache: 'no-cache' }).then(function (r) { if (!r.ok) throw new Error('missing'); return r.arrayBuffer(); })
-      .then(decryptBytes).then(function (plain) { cache[id] = JSON.parse(new TextDecoder().decode(plain)); return cache[id]; });
+    return fetch('cs/' + id + '.bin', { cache: 'no-cache' }).catch(function () { throw new Error('load'); }).then(function (r) { if (!r.ok) throw new Error('load'); return r.arrayBuffer(); })
+      .then(function (buf) { return decryptBytes(buf).catch(function () { throw new Error('password'); }); }).then(function (plain) { cache[id] = JSON.parse(new TextDecoder().decode(plain)); return cache[id]; });
   }
   function mimeOf(u) {
     if (u[0] === 0x89 && u[1] === 0x50) return 'image/png';
@@ -104,6 +104,7 @@
 
   function close() {
     if (!ov) return;
+    clearInterval(coinT); coinT = null;
     var id = current, card = document.getElementById('card-' + id);
     if (card) { try { card.scrollIntoView({ block: 'center' }); } catch (e) {} }
     rect = cardRect(id) || rect;
@@ -140,13 +141,16 @@
         return loadStudy(current).then(function (d) {
           return crypto.subtle.exportKey('raw', k).then(function (raw) { ss('eb-key', ub64(new Uint8Array(raw))); return d; });
         });
-      }).then(function (d) { renderStudy(d, glow); }, function () {
+      }).then(function (d) { renderStudy(d, glow); }, function (err) {
         KEY = null; btn.disabled = false; btn.removeAttribute('aria-busy');
         var gate = ov.querySelector('.gate');
-        if (!ov.querySelector('.gate .err')) {
-          var p = document.createElement('p'); p.className = 'err'; p.setAttribute('role', 'alert'); p.textContent = 'That’s not quite it. Try again?';
-          var small = gate.querySelector('.small'); gate.insertBefore(p, small);
-        }
+        var old = ov.querySelector('.gate .err'); if (old) old.remove();
+        var msg = 'That’s not quite it. Try again?';
+        if (err && err.message === 'load') msg = location.protocol === 'file:'
+          ? 'Case studies can’t load from a file opened on your computer. View the site from its web address instead.'
+          : 'The case study couldn’t load. Check your connection and try again.';
+        var p = document.createElement('p'); p.className = 'err'; p.setAttribute('role', 'alert'); p.textContent = msg;
+        gate.insertBefore(p, gate.querySelector('.small'));
         gate.classList.remove('shake'); void gate.offsetWidth; gate.classList.add('shake');
         input.select();
       });
@@ -168,8 +172,25 @@
     var btn = ov.querySelector('.qk-btn');
     if (btn) { btn.classList.remove('on', 'glow'); if (glow) btn.classList.add('glow'); }
     fillImages(ov);
+    startCoins();
     ov.scrollTop = 0;
     onScroll();
+  }
+
+  /* credits hero: one coin flips at random every 5 seconds */
+  var coinT = null, coinLast = -1, coinN = 0;
+  function startCoins() {
+    clearInterval(coinT); coinT = null;
+    var coins = ov.querySelectorAll('.hero-coins .hc');
+    coins.forEach(function (c) { c.classList.remove('spin', 'spin2'); });
+    if (!coins.length || reduced()) return;
+    coinT = setInterval(function () {
+      if (!document.body.contains(coins[0])) { clearInterval(coinT); coinT = null; return; }
+      var i;
+      do { i = Math.floor(Math.random() * 5) * 8 + 3 + Math.floor(Math.random() * 5); } while (i === coinLast || i >= coins.length);
+      if (coinLast >= 0 && coins[coinLast]) coins[coinLast].classList.remove('spin', 'spin2');
+      coinN++; coins[i].classList.add(coinN % 2 ? 'spin' : 'spin2'); coinLast = i;
+    }, 5000);
   }
 
   function setAcc(el, on) {
@@ -245,6 +266,16 @@
     if (t.matches('.ri')) { goTo(t.getAttribute('data-go')); return; }
     if (t.matches('.tl-head')) { var it = t.closest('.tl-i'); setAcc(it, !it.classList.contains('open')); return; }
     if (t.matches('.view-full')) { var hi = ov.querySelector('.cs-hero-bg img'); if (hi) openLightbox(hi.src, hi.getAttribute('alt') || ov.getAttribute('aria-label'), null, ''); return; }
+    if (t.matches('.n2-pause')) {
+      var fr = t.closest('.n2-frame'), on = !fr.classList.contains('paused');
+      fr.classList.toggle('paused', on);
+      t.setAttribute('aria-pressed', on ? 'true' : 'false');
+      t.setAttribute('aria-label', on ? 'Play animation' : 'Pause animation');
+      t.innerHTML = on
+        ? '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M4 2.6v8.8a.6.6 0 0 0 .9.5l7-4.4a.6.6 0 0 0 0-1L4.9 2.1a.6.6 0 0 0-.9.5Z" fill="currentColor"></path></svg>'
+        : '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><rect x="3" y="2.5" width="2.6" height="9" rx="1" fill="currentColor"></rect><rect x="8.4" y="2.5" width="2.6" height="9" rx="1" fill="currentColor"></rect></svg>';
+      return;
+    }
     if (t.matches('.shot')) {
       var img = t.querySelector('img:not(.ovl-gif)'), gif = t.querySelector('.ovl-gif');
       if (img) openLightbox(img.src, img.getAttribute('alt') || '', gif ? gif.src : null, gif ? (gif.classList.contains('ovl-ext') ? 'ovl-ext' : 'ovl-inc') : '');
@@ -268,7 +299,7 @@
   function closeLightbox() { if (lb) { lb.remove(); lb = null; } }
 
   /* ---------- homepage ---------- */
-  ['ai', 'pricing', 'cancel'].forEach(function (id) {
+  ['credits', 'ai', 'pricing', 'cancel'].forEach(function (id) {
     var c = document.getElementById('card-' + id); if (c) c.addEventListener('click', function () { open(id); });
   });
 
