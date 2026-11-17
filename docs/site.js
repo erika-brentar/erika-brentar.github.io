@@ -232,6 +232,7 @@
   }
 
   var ticking = false;
+  var lastActive = -1;
   function onScroll() {
     if (ticking || !ov) return; ticking = true;
     requestAnimationFrame(function () {
@@ -240,6 +241,13 @@
       var items = ov.querySelectorAll('.ri[data-go]');
       items.forEach(function (b, i) { var el = document.getElementById(b.getAttribute('data-go')); if (el && el.getBoundingClientRect().top - base < 220) a = i; });
       items.forEach(function (b, i) { b.classList.toggle('on', i === a); });
+      // phones: the section chips scroll sideways, so keep the active one in view
+      var rl = ov.querySelector('.rail'), ab = items[a];
+      if (rl && ab && rl.scrollWidth > rl.clientWidth + 2 && a !== lastActive) {
+        var want = ab.offsetLeft - (rl.clientWidth - ab.offsetWidth) / 2;
+        try { rl.scrollTo({ left: Math.max(0, want), behavior: reduced() ? 'auto' : 'smooth' }); } catch (e) { rl.scrollLeft = Math.max(0, want); }
+      }
+      lastActive = a;
       var ind = ov.querySelector('.rail-ind'); if (ind) ind.style.transform = 'translateY(' + (a * 40) + 'px)';
       var max = ov.scrollHeight - ov.clientHeight;
       var prog = ov.querySelector('.prog'); if (prog) prog.style.transform = 'scaleX(' + (max > 0 ? Math.min(1, ov.scrollTop / max) : 0) + ')';
