@@ -3,6 +3,8 @@
    visitor's browser (PBKDF2-SHA256), and nothing readable ships until it is entered. */
 (function () {
   'use strict';
+  // decryption only works on https, so send plain-http visitors there
+  if (location.protocol === 'http:' && !/^(localhost|127\.)/.test(location.hostname)) { location.replace('https:' + location.href.slice(5)); return; }
   var root = document.querySelector('.eb');
   var ORDER = [];
   var CFG = null;           // site.json: salt, iterations, studies
@@ -136,17 +138,25 @@
       var val = input.value || '';
       if (!val) return;
       btn.disabled = true; btn.setAttribute('aria-busy', 'true');
-      deriveKey(val).then(function (k) {
-        KEY = k;
-        return loadStudy(current).then(function (d) {
-          return crypto.subtle.exportKey('raw', k).then(function (raw) { ss('eb-key', ub64(new Uint8Array(raw))); return d; });
+      var attempt = function (pw) {
+        return deriveKey(pw).then(function (k) {
+          KEY = k;
+          return loadStudy(current).then(function (d) {
+            return crypto.subtle.exportKey('raw', k).then(function (raw) { ss('eb-key', ub64(new Uint8Array(raw))); return d; });
+          });
         });
-      }).then(function (d) { renderStudy(d, glow); }, function (err) {
+      };
+      var run = (!window.crypto || !crypto.subtle) ? Promise.reject(new Error('crypto'))
+        // a pasted password often brings a stray space along; try it without one before saying no
+        : attempt(val).catch(function (err) { if (err && err.message === 'password' && val.trim() && val.trim() !== val) return attempt(val.trim()); throw err; });
+      run.then(function (d) { renderStudy(d, glow); }, function (err) {
         KEY = null; btn.disabled = false; btn.removeAttribute('aria-busy');
         var gate = ov.querySelector('.gate');
         var old = ov.querySelector('.gate .err'); if (old) old.remove();
         var msg = 'That’s not quite it. Try again?';
-        if (err && err.message === 'load') msg = location.protocol === 'file:'
+        if (err && err.message === 'crypto') msg = 'This browser can’t unlock the case studies. Try a recent version of Chrome, Safari, Edge or Firefox.';
+        else if (err && err.message !== 'password' && err.message !== 'load') msg = 'Something went wrong unlocking the case study. Try again, or try another browser.';
+        else if (err && err.message === 'load') msg = location.protocol === 'file:'
           ? 'Case studies can’t load from a file opened on your computer. View the site from its web address instead.'
           : 'The case study couldn’t load. Check your connection and try again.';
         var p = document.createElement('p'); p.className = 'err'; p.setAttribute('role', 'alert'); p.textContent = msg;
@@ -156,6 +166,16 @@
       });
     };
     btn.addEventListener('click', submit);
+    var eye = ov.querySelector('.pw-eye');
+    if (eye) eye.addEventListener('click', function () {
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      eye.setAttribute('aria-pressed', show ? 'true' : 'false');
+      eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      eye.setAttribute('data-tip', show ? 'Hide' : 'Show');
+      eye.innerHTML = show ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 5.6A9.9 9.9 0 0 1 12 5.5C18 5.5 21.5 12 21.5 12a17.6 17.6 0 0 1-2.6 3.4M6.2 7.2C3.9 8.9 2.5 12 2.5 12S6 18.5 12 18.5c1.8 0 3.4-.6 4.7-1.4"></path><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path><path d="m3 3 18 18"></path></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+      try { input.focus({ preventScroll: true }); } catch (e) {}
+    });
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(e); });
     input.addEventListener('input', function () { var er = ov.querySelector('.gate .err'); if (er) er.remove(); });
     setTimeout(function () { try { input.focus({ preventScroll: true }); } catch (e) {} }, 400);
