@@ -60,10 +60,22 @@
       loadImg(img.getAttribute('data-img')).then(function (url) { img.src = url; }).catch(function () {});
     });
   }
+  /* access links: erikabrentar.com/#access=<key> opens the case studies without the password.
+     The part after # never leaves the visitor's browser, and it is cleared from the address bar right away. */
+  var ACCESS = null;
+  (function () {
+    var m = /[#&]access=([A-Za-z0-9_-]{40,60})/.exec(location.hash || '');
+    if (!m) return;
+    var k = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (k.length % 4) k += '=';
+    ACCESS = k; ss('eb-key', k);
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  })();
+
   function restoreKey() {
-    var raw = ss('eb-key');
+    var raw = ss('eb-key') || ACCESS;
     if (!raw || KEY) return Promise.resolve(!!KEY);
-    return crypto.subtle.importKey('raw', b64(raw), { name: 'AES-GCM' }, true, ['decrypt']).then(function (k) { KEY = k; return true; }, function () { ss('eb-key', null); return false; });
+    return crypto.subtle.importKey('raw', b64(raw), { name: 'AES-GCM' }, true, ['decrypt']).then(function (k) { KEY = k; return true; }, function () { ss('eb-key', null); ACCESS = null; return false; });
   }
 
   /* ---------- overlay ---------- */
@@ -96,7 +108,7 @@
     document.documentElement.classList.add('ov-lock');
     var glow = !glowSeen; glowSeen = true;
     restoreKey().then(function () {
-      if (KEY) return loadStudy(id).then(function (d) { renderStudy(d, glow); }, function () { KEY = null; ss('eb-key', null); renderGate(glow); });
+      if (KEY) return loadStudy(id).then(function (d) { renderStudy(d, glow); }, function () { KEY = null; ACCESS = null; ss('eb-key', null); renderGate(glow); });
       renderGate(glow);
     });
     requestAnimationFrame(function () { requestAnimationFrame(function () { setClip('inset(0px 0px 0px 0px round 0px)', true); }); });
@@ -167,6 +179,8 @@
     };
     btn.addEventListener('click', submit);
     var eye = ov.querySelector('.pw-eye');
+    // keep focus (and the phone keyboard) in the field, so the layout doesn't jump out from under the tap
+    if (eye) { eye.addEventListener('mousedown', function (e) { e.preventDefault(); }); eye.addEventListener('pointerdown', function (e) { if (e.pointerType !== 'mouse') e.preventDefault(); }); }
     if (eye) eye.addEventListener('click', function () {
       var show = input.type === 'password';
       input.type = show ? 'text' : 'password';

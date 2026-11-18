@@ -36,6 +36,9 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .status{font-size:14px;margin-top:12px;color:var(--muted)}
 .status.err{color:#9B2C1A}
 .status.ok{color:var(--ok)}
+.opt{font:12px ui-monospace,Menlo,monospace;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:400}
+.linkbox{display:flex;gap:8px;margin-top:14px}.linkbox input{flex:1;min-width:0;font:13px ui-monospace,Menlo,monospace !important}
+.linkbox[hidden]{display:none}
 .show{font-size:14px;font-weight:500;display:flex;gap:6px;align-items:center;margin-top:8px;color:var(--muted)}
 ul{margin:8px 0 0;padding-left:20px;color:var(--muted);font-size:15px}
 code{font:13px ui-monospace,Menlo,monospace;background:var(--soft);padding:1px 6px;border-radius:6px}
@@ -78,7 +81,23 @@ code{font:13px ui-monospace,Menlo,monospace;background:var(--soft);padding:1px 6
     <ul>
       <li>Then commit and push <code>docs</code>. The readable <code>site-source</code> folder stays on your computer.</li>
       <li>To change the password later, run this again with the new one and push.</li>
+      <li>Encrypting again turns off any access links you’ve shared. Make new ones below.</li>
     </ul>
+  </section>
+
+  <section class="step" id="s4">
+    <h2><span class="n">4</span>Make an access link <span class="opt">optional</span></h2>
+    <p>A link that opens the case studies without the password, for a recruiter or an application. Anyone with the link can get in, so share it like you would the password. It keeps working until you encrypt again.</p>
+    <span class="file"><button type="button" tabindex="-1">Choose your docs folder…</button><input id="docsdir" type="file" webkitdirectory directory multiple aria-label="Choose the docs folder in your repo"></span>
+    <div class="status" id="s4dir" role="status"></div>
+    <label for="lpw">Your current password</label>
+    <input id="lpw" type="password" autocomplete="off" spellcheck="false">
+    <div class="row" style="margin-top:14px"><button type="button" id="mklink" disabled>Make link</button></div>
+    <div class="linkbox" id="linkbox" hidden>
+      <input id="link" type="text" readonly aria-label="Access link">
+      <button type="button" class="ghost" id="copylink">Copy</button>
+    </div>
+    <div class="status" id="s4st" role="status"></div>
   </section>
 </main>
 
@@ -199,6 +218,49 @@ $('saveDir').addEventListener('click', async function () {
     st('s3st', 'Done. Saved ' + Object.keys(out).length + ' files into “' + dir.name + '”. Commit and push to publish.', 'ok');
     $('s3').classList.add('done');
   } catch (e) { st('s3st', 'Something went wrong: ' + e.message, 'err'); }
+});
+
+/* ===== step 4: access link ===== */
+var SITE = 'https://erikabrentar.com/';
+var DOCS = null;
+$('docsdir').addEventListener('change', async function (e) {
+  DOCS = null; $('linkbox').hidden = true; st('s4st', '');
+  var fl = Array.prototype.slice.call(e.target.files || []);
+  var find = function (rel) { return fl.find(function (f) { var p = (f.webkitRelativePath || f.name).split('/'); return p.slice(1).join('/') === rel; }); };
+  var cfgF = find('site.json');
+  if (!cfgF) { st('s4dir', 'That folder has no site.json. Choose the docs folder inside your repo (the one you push).', 'err'); $('mklink').disabled = true; return; }
+  try {
+    var cfg = JSON.parse(await cfgF.text());
+    var binF = find('cs/' + cfg.studies[0] + '.bin');
+    if (!binF) throw new Error('missing');
+    DOCS = { cfg: cfg, bin: new Uint8Array(await binF.arrayBuffer()) };
+    st('s4dir', 'Found your published site (' + cfg.studies.length + ' case studies).', 'ok');
+    $('mklink').disabled = false;
+  } catch (er) { st('s4dir', 'Couldn’t read that docs folder. Make sure it’s the one you encrypted into.', 'err'); $('mklink').disabled = true; }
+});
+function b64url(u) { var s = ''; for (var i = 0; i < u.length; i++) s += String.fromCharCode(u[i]); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+$('mklink').addEventListener('click', async function () {
+  var pw = $('lpw').value;
+  if (!DOCS || !pw) { st('s4st', 'Choose your docs folder and type your password first.', 'err'); return; }
+  $('mklink').disabled = true; st('s4st', 'Checking your password…');
+  try {
+    var bin = function (s) { var b = atob(s), u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+    var base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw.normalize('NFC')), 'PBKDF2', false, ['deriveKey']);
+    var k = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: bin(DOCS.cfg.salt), iterations: DOCS.cfg.iterations, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, true, ['decrypt']);
+    try { await crypto.subtle.decrypt({ name: 'AES-GCM', iv: DOCS.bin.slice(0, 12) }, k, DOCS.bin.slice(12)); }
+    catch (er) { st('s4st', 'That password doesn’t match this docs folder. Use the one you encrypted with.', 'err'); return; }
+    var raw = new Uint8Array(await crypto.subtle.exportKey('raw', k));
+    $('link').value = SITE + '#access=' + b64url(raw);
+    $('linkbox').hidden = false;
+    st('s4st', 'Here’s your link. It works once this docs folder is pushed, and stops working the next time you encrypt.', 'ok');
+    $('s4').classList.add('done');
+  } catch (er) { st('s4st', 'Something went wrong: ' + er.message, 'err'); }
+  finally { $('mklink').disabled = false; }
+});
+$('copylink').addEventListener('click', async function () {
+  var v = $('link').value;
+  try { await navigator.clipboard.writeText(v); } catch (e) { $('link').select(); try { document.execCommand('copy'); } catch (e2) {} }
+  $('copylink').textContent = 'Copied'; setTimeout(function () { $('copylink').textContent = 'Copy'; }, 1600);
 });
 
 /* minimal .zip writer (stored, no compression) */
